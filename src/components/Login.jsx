@@ -33,7 +33,19 @@ export default function Login() {
         body: JSON.stringify(formData),
       });
 
-      const data = await response.json();
+      // Check if response has content before trying to parse JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Server returned non-JSON response');
+      }
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('JSON parsing error:', jsonError);
+        throw new Error('Invalid response from server');
+      }
 
       if (response.ok) {
         setMessage('Login successful!');
@@ -43,8 +55,8 @@ export default function Login() {
         setMessage(data.error || 'Login failed');
       }
     } catch (error) {
-      setMessage('An error occurred. Please try again.');
-      console.error('Login error:', error);
+      console.error('Login API error:', error);
+      setMessage(`Login error: ${error.message}`);
     } finally {
       setIsLoading(false);
     }

@@ -17,7 +17,36 @@ export const POST: APIRoute = async ({ request }) => {
 
     // Read user data from JSON file
     const dataPath = path.join(process.cwd(), 'data', 'data.json');
-    const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
+    console.log('Attempting to read data from:', dataPath);
+    
+    if (!fs.existsSync(dataPath)) {
+      console.error('Data file does not exist at:', dataPath);
+      return new Response(
+        JSON.stringify({ error: 'User data not found' }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    let data;
+    try {
+      const fileContent = fs.readFileSync(dataPath, 'utf-8');
+      console.log('File content length:', fileContent.length);
+      data = JSON.parse(fileContent);
+    } catch (fileError) {
+      console.error('Error reading or parsing data file:', fileError);
+      return new Response(
+        JSON.stringify({ error: 'Failed to read user data' }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!data || !data.users || !Array.isArray(data.users)) {
+      console.error('Invalid data structure:', data);
+      return new Response(
+        JSON.stringify({ error: 'Invalid user data format' }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Find user
     const user = data.users.find(
