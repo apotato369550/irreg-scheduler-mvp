@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Irregular Schedule Generator MVP</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>IrregSched — Irregular Student Schedule Generator</h1>
+    <p class="subtitle">Client-side only • No login • MVP</p>
+  </header>
+
+  <main class="container">
+    <section class="panel" id="input-panel">
+      <h2>1) Schedule Input</h2>
+      <div class="panes">
+        <div class="pane" id="subject-form-pane">
+          <h3>Subjects & Sections</h3>
+          <form id="subject-form" autocomplete="off">
+            <div class="row">
+              <label>Course Code</label>
+              <input type="text" id="courseCode" placeholder="e.g., CIS 2103" required />
+            </div>
+            <div class="row">
+              <label>Course Name</label>
+              <input type="text" id="courseName" placeholder="e.g., Object-Oriented Programming" required />
+            </div>
+
+            <div class="sections-builder" id="sections-builder">
+              <div class="builder-header">
+                <span>Add Sections</span>
+                <button type="button" id="add-section-btn" class="btn btn-secondary">+ Section</button>
+              </div>
+              <div id="builder-section-list"></div>
+            </div>
+
+            <div class="actions">
+              <button type="submit" class="btn btn-primary">Add Subject</button>
+              <button type="button" id="reset-form" class="btn">Reset</button>
+            </div>
+          </form>
+
+          <div class="importer">
+            <h3>Import</h3>
+            <div class="row">
+              <input type="file" id="csvFileInput" accept=".csv" />
+              <button class="btn" id="importCsvBtn" type="button">Import CSV</button>
+              <button class="btn" id="exportCsvBtn" type="button">Export CSV</button>
+            </div>
+            <div class="row">
+              <label>Load Sample Dataset</label>
+              <select id="sampleSelect">
+                <option value="cs">CS (Computer Science)</option>
+                <option value="literature">Literature</option>
+                <option value="chemistry">Chemistry</option>
+              </select>
+              <button class="btn btn-secondary" id="loadSampleJsonBtn" type="button">Load Sample</button>
+              <button class="btn" id="loadSampleCsvBtn" type="button">Load Sample CSV</button>
+            </div>
+          </div>
+
+          <div class="subject-list" id="subject-list">
+            <!-- Rendered subjects appear here -->
+          </div>
+        </div>
+
+        <div class="pane" id="constraints-pane">
+          <h3>Constraints</h3>
+          <form id="constraints-form">
+            <div class="row">
+              <label for="earliestStart">Earliest Start</label>
+              <input type="time" id="earliestStart" value="07:30" />
+            </div>
+            <div class="row">
+              <label for="latestEnd">Latest End</label>
+              <input type="time" id="latestEnd" value="16:30" />
+            </div>
+            <div class="row checkbox">
+              <label>
+                <input type="checkbox" id="allowFull" /> Allow Full Sections
+              </label>
+            </div>
+            <div class="row">
+              <label for="maxFullPerSchedule">Max Full Sections / Schedule</label>
+              <input type="number" id="maxFullPerSchedule" value="1" min="0" max="10" />
+            </div>
+            <div class="row checkbox">
+              <label>
+                <input type="checkbox" id="allowAtRisk" /> Allow At-Risk Sections
+              </label>
+            </div>
+            <div class="row">
+              <label for="maxSchedules">Max Schedules</label>
+              <input type="range" id="maxSchedules" min="1" max="50" value="20" />
+              <span id="maxSchedulesValue">20</span>
+            </div>
+          </form>
+
+          <div class="generate-actions">
+            <button id="generate-btn" class="btn btn-accent">Generate Schedules</button>
+            <span id="gen-status" class="status"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="results-panel">
+      <h2>2) Results</h2>
+      <div id="summary-stats" class="summary"></div>
+
+      <div class="results-toolbar">
+        <div class="tabs" id="result-tabs">
+          <button data-tab="all" class="tab active">All</button>
+          <button data-tab="endsBy" class="tab">Ends by <span class="time-label"></span></button>
+          <button data-tab="late" class="tab">Has Late Classes</button>
+          <button data-tab="full" class="tab">Has Full Sections</button>
+        </div>
+        <div class="sort">
+          <label>Sort</label>
+          <select id="sortSelect">
+            <option value="best">Best match</option>
+            <option value="earliest">Earliest end</option>
+            <option value="fewestFull">Fewest full sections</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="results-list" class="results-list"></div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span>MVP • All logic runs in your browser</span>
+  </footer>
+
+  <script src="sample-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+
+

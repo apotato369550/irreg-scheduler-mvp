@@ -1,0 +1,44 @@
+courseCode,courseName,group,schedule,enrolled
+CIS 2103,Object-Oriented Programming,1,"TTh 10:00 AM - 12:30 PM",20/20
+CIS 2103,Object-Oriented Programming,2,"TTh 10:00 AM - 12:30 PM",20/20
+CIS 2103,Object-Oriented Programming,3,"TTh 07:30 AM - 10:00 AM",20/20
+CIS 2103,Object-Oriented Programming,4,"TTh 07:30 AM - 10:00 AM",7/20
+CIS 2103,Object-Oriented Programming,5,"MW 10:00 AM - 12:30 PM",6/20
+CIS 2103,Object-Oriented Programming,6,"MW 07:30 AM - 10:00 AM",0/20
+CIS 2103,Object-Oriented Programming,7,"MW 10:00 AM - 12:30 PM",2/18
+CIS 2103,Object-Oriented Programming,8,"TTh 12:30 PM - 03:00 PM",0/18
+CIS 2103,Object-Oriented Programming,9,"MW 03:00 PM - 05:30 PM",10/18
+CIS 2103,Object-Oriented Programming,10,"MW 12:30 PM - 03:00 PM",20/20
+CS 3101N,Discrete Structures III,1,"MW 09:00 AM - 10:30 AM",40/40
+CS 3101N,Discrete Structures III,2,"MW 10:30 AM - 12:00 PM",27/40
+CS 3101N,Discrete Structures III,3,"MW 01:30 PM - 03:00 PM",6/40
+CS 3103,Assembly Language Programming,1,"MW 07:30 AM - 09:00 AM",40/40
+CS 3103,Assembly Language Programming,2,"MW 09:00 AM - 10:30 AM",27/40
+CS 3103,Assembly Language Programming,3,"MW 03:00 PM - 04:30 PM",6/40
+CIS 2102,Web Development II,1,"MW 03:00 PM - 05:30 PM",20/20
+CIS 2102,Web Development II,2,"MW 03:00 PM - 05:30 PM",20/20
+CIS 2102,Web Development II,3,"MW 12:30 PM - 03:00 PM",20/20
+CIS 2102,Web Development II,4,"MW 12:30 PM - 03:00 PM",7/20
+CIS 2102,Web Development II,5,"TTh 07:30 AM - 10:00 AM",6/20
+CIS 2102,Web Development II,6,"TTh 10:00 AM - 12:30 PM",0/20
+CIS 2101,Data Structures and Algorithms,1,"TTh 07:30 AM - 10:00 AM",20/20
+CIS 2101,Data Structures and Algorithms,2,"TTh 07:30 AM - 10:00 AM",20/20
+CIS 2101,Data Structures and Algorithms,3,"TTh 10:00 AM - 12:30 PM",20/20
+CIS 2101,Data Structures and Algorithms,4,"TTh 10:00 AM - 12:30 PM",7/20
+CIS 2101,Data Structures and Algorithms,5,"MW 07:30 AM - 10:00 AM",6/20
+CIS 2101,Data Structures and Algorithms,6,"MW 10:00 AM - 12:30 PM",0/20
+CIS 2101,Data Structures and Algorithms,7,"MW 07:30 AM - 10:00 AM",2/18
+CIS 2101,Data Structures and Algorithms,8,"MW 10:00 AM - 12:30 PM",0/18
+CIS 2101,Data Structures and Algorithms,9,"MW 12:30 PM - 03:00 PM",10/18
+CIS 2101,Data Structures and Algorithms,10,"MW 03:00 PM - 05:30 PM",18/18
+CIS 2105,Networking II,1,"MW 12:30 PM - 03:00 PM",20/20
+CIS 2105,Networking II,2,"MW 12:30 PM - 03:00 PM",20/20
+CIS 2105,Networking II,3,"MW 03:00 PM - 05:30 PM",20/20
+CIS 2105,Networking II,4,"MW 03:00 PM - 05:30 PM",7/20
+CIS 2105,Networking II,5,"TTh 10:00 AM - 12:30 PM",6/20
+CIS 2105,Networking II,6,"TTh 07:30 AM - 10:00 AM",0/20
+CIS 2105,Networking II,7,"TTh 12:30 PM - 03:00 PM",2/18
+CIS 2105,Networking II,8,"MW 07:30 AM - 10:00 AM",0/18
+CIS 2105,Networking II,9,"TTh 07:30 AM - 10:00 AM",10/18
+CIS 2105,Networking II,10,"TTh 03:00 PM - 05:30 PM",18/18
+
