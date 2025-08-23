@@ -1,0 +1,6 @@
+courseCode,courseName,group,schedule,enrolled
+CHEM 101,General Chemistry,1,"MW 08:00 AM - 09:30 AM",40/40
+CHEM 101,General Chemistry,2,"TTh 10:00 AM - 11:30 AM",38/40
+CHEM 201,Organic Chemistry,1,"MW 01:00 PM - 02:30 PM",6/40
+CHEM 201,Organic Chemistry,2,"TTh 03:00 PM - 04:30 PM",0/40
+
