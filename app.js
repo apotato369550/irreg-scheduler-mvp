@@ -99,26 +99,69 @@ function isViableSection(section, constraints) {
   return true;
 }
 
-// Combination generation
+// Improved combination generation with better performance
 function generateValidSchedules(subjects, constraints) {
-  const viablePerSubject = subjects.map(subj => subj.sections.filter(sec => isViableSection(sec, constraints)));
+  console.log('Starting schedule generation...');
+  console.log('Subjects:', subjects.length);
+  console.log('Constraints:', constraints);
+
+  // Pre-filter viable sections for each subject
+  const viablePerSubject = subjects.map(subj => {
+    const viableSections = subj.sections.filter(sec => isViableSection(sec, constraints));
+    console.log(`Subject ${subj.courseCode}: ${viableSections.length} viable sections out of ${subj.sections.length}`);
+    return viableSections;
+  });
+
   // Early exit if any subject has no viable section
-  if (viablePerSubject.some(list => list.length === 0)) return [];
+  if (viablePerSubject.some(list => list.length === 0)) {
+    console.log('No viable sections found for at least one subject');
+    return [];
+  }
+
+  // Calculate total possible combinations to avoid excessive computation
+  const totalCombinations = viablePerSubject.reduce((acc, sections) => acc * sections.length, 1);
+  console.log('Total possible combinations:', totalCombinations);
+  
+  // Safety check - if combinations exceed reasonable limit, reduce maxSchedules
+  const safeMaxSchedules = Math.min(constraints.maxSchedules, 100);
+  if (totalCombinations > 10000) {
+    console.warn('Large number of combinations detected, limiting search');
+  }
 
   const results = [];
   const current = [];
+  let iterationCount = 0;
+  const maxIterations = 50000; // Safety limit
 
   function backtrack(subjectIndex) {
-    if (results.length >= constraints.maxSchedules) return;
-    if (subjectIndex === subjects.length) {
+    iterationCount++;
+    
+    // Safety checks to prevent infinite recursion
+    if (iterationCount > maxIterations) {
+      console.warn('Maximum iterations reached, stopping generation');
+      return true; // Signal to stop
+    }
+    
+    if (results.length >= safeMaxSchedules) {
+      return true; // Signal to stop
+    }
+
+    if (subjectIndex >= subjects.length) {
       // Validate full sections count
       const fullCount = current.reduce((acc, s) => acc + (isFullSection(s) ? 1 : 0), 0);
-      if (!constraints.allowFull && fullCount > 0) return; // defensive
-      if (constraints.allowFull && fullCount > constraints.maxFullPerSchedule) return;
-      const parsedArr = current.map(s => parseSchedule(s.schedule));
+      
+      // Apply constraints
+      if (!constraints.allowFull && fullCount > 0) return false;
+      if (constraints.allowFull && fullCount > constraints.maxFullPerSchedule) return false;
+
+      // Parse schedules and create result
+      const parsedArr = current.map(s => parseSchedule(s.schedule)).filter(p => p !== null);
+      if (parsedArr.length !== current.length) return false; // Skip if any schedule failed to parse
+
       const latestEndPref = toMinutesFromTimeInput(constraints.latestEnd);
       const endsByPreferred = parsedArr.every(p => p.endTime <= latestEndPref);
       const hasLate = !endsByPreferred;
+
       results.push({
         selections: [...current],
         parsed: parsedArr,
@@ -129,26 +172,42 @@ function generateValidSchedules(subjects, constraints) {
           latestEnd: Math.max(...parsedArr.map(p => p.endTime)),
         },
       });
-      return;
+      return false; // Continue searching
     }
 
     const options = viablePerSubject[subjectIndex];
-    for (const sec of options) {
-      // Check for conflicts with current
+    for (let i = 0; i < options.length; i++) {
+      const sec = options[i];
       const parsedSec = parseSchedule(sec.schedule);
+      
+      if (!parsedSec) continue; // Skip unparseable schedules
+
+      // Check for conflicts with current selections
       let conflict = false;
-      for (const existing of current) {
-        if (hasTimeConflict(parsedSec, parseSchedule(existing.schedule))) { conflict = true; break; }
+      for (let j = 0; j < current.length; j++) {
+        const existingParsed = parseSchedule(current[j].schedule);
+        if (existingParsed && hasTimeConflict(parsedSec, existingParsed)) {
+          conflict = true;
+          break;
+        }
       }
+      
       if (conflict) continue;
+
       current.push(sec);
-      backtrack(subjectIndex + 1);
+      const shouldStop = backtrack(subjectIndex + 1);
       current.pop();
-      if (results.length >= constraints.maxSchedules) return;
+      
+      if (shouldStop) return true;
     }
+    
+    return false;
   }
 
+  console.log('Starting backtrack algorithm...');
   backtrack(0);
+  console.log(`Generation completed. Found ${results.length} schedules in ${iterationCount} iterations`);
+  
   return results;
 }
 
@@ -478,15 +537,26 @@ function init() {
   document.getElementById('generate-btn').onclick = async () => {
     const status = document.getElementById('gen-status');
     status.textContent = 'Generating…';
-    // Read constraints and store
-    appState.constraints = readConstraints();
-    refreshTabsLabels();
-    await new Promise(r => setTimeout(r, 50));
-    // Generate
-    const res = generateValidSchedules(appState.subjects, appState.constraints);
-    appState.generated.schedules = res;
-    status.textContent = res.length === 0 ? 'No schedules found.' : `Generated ${res.length} schedule(s).`;
-    renderResults();
+    
+    try {
+      // Read constraints and store
+      appState.constraints = readConstraints();
+      refreshTabsLabels();
+      
+      // Small delay to allow UI update
+      await new Promise(r => setTimeout(r, 50));
+      
+      // Generate with error handling
+      console.log('Starting schedule generation with subjects:', appState.subjects);
+      const res = generateValidSchedules(appState.subjects, appState.constraints);
+      appState.generated.schedules = res;
+      
+      status.textContent = res.length === 0 ? 'No schedules found.' : `Generated ${res.length} schedule(s).`;
+      renderResults();
+    } catch (error) {
+      console.error('Error generating schedules:', error);
+      status.textContent = 'Error generating schedules. Check console for details.';
+    }
   };
 
   // Seed with sample data for smoke testing
@@ -494,41 +564,57 @@ function init() {
   renderSubjects();
   refreshTabsLabels();
 
-  // Import/Export wiring
-  document.getElementById('importCsvBtn').onclick = async () => {
-    const fi = document.getElementById('csvFileInput');
-    if (!fi.files || fi.files.length === 0) { alert('Choose a CSV file first.'); return; }
-    const text = await fi.files[0].text();
-    const rows = window.SampleData.parseCSV(text);
-    const subjects = window.SampleData.csvRowsToSubjects(rows);
-    appState.subjects = subjects;
-    renderSubjects();
-  };
-  document.getElementById('exportCsvBtn').onclick = () => {
-    const csv = window.SampleData.subjectsToCSV(appState.subjects);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'subjects_export.csv'; a.click();
-    URL.revokeObjectURL(url);
-  };
-  document.getElementById('loadSampleJsonBtn').onclick = () => {
-    const sel = document.getElementById('sampleSelect').value;
-    appState.subjects = JSON.parse(JSON.stringify(window.SampleData.sampleCourseData[sel].subjects));
-    renderSubjects();
-  };
-  document.getElementById('loadSampleCsvBtn').onclick = () => {
-    const sel = document.getElementById('sampleSelect').value;
-    const rows = window.SampleData.parseCSV(window.SampleData.sampleCourseDataCSV[sel]);
-    appState.subjects = window.SampleData.csvRowsToSubjects(rows);
-    renderSubjects();
-  };
+  // Import/Export wiring (requires sample-data.js)
+  if (typeof window.SampleData !== 'undefined') {
+    document.getElementById('importCsvBtn').onclick = async () => {
+      const fi = document.getElementById('csvFileInput');
+      if (!fi.files || fi.files.length === 0) { alert('Choose a CSV file first.'); return; }
+      const text = await fi.files[0].text();
+      const rows = window.SampleData.parseCSV(text);
+      const subjects = window.SampleData.csvRowsToSubjects(rows);
+      appState.subjects = subjects;
+      renderSubjects();
+    };
+    document.getElementById('exportCsvBtn').onclick = () => {
+      const csv = window.SampleData.subjectsToCSV(appState.subjects);
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'subjects_export.csv'; a.click();
+      URL.revokeObjectURL(url);
+    };
+    document.getElementById('loadSampleJsonBtn').onclick = () => {
+      const sel = document.getElementById('sampleSelect').value;
+      appState.subjects = JSON.parse(JSON.stringify(window.SampleData.sampleCourseData[sel].subjects));
+      renderSubjects();
+    };
+    document.getElementById('loadSampleCsvBtn').onclick = () => {
+      const sel = document.getElementById('sampleSelect').value;
+      const rows = window.SampleData.parseCSV(window.SampleData.sampleCourseDataCSV[sel]);
+      appState.subjects = window.SampleData.csvRowsToSubjects(rows);
+      renderSubjects();
+    };
+  }
 }
 
 function seedSample() {
   if (appState.subjects.length > 0) return;
-  // Default to CS sample
-  appState.subjects = JSON.parse(JSON.stringify(window.SampleData.sampleCourseData.cs.subjects));
+  // Simple fallback data if sample-data.js is not available
+  if (typeof window.SampleData !== 'undefined' && window.SampleData.sampleCourseData) {
+    appState.subjects = JSON.parse(JSON.stringify(window.SampleData.sampleCourseData.cs.subjects));
+  } else {
+    // Minimal sample data
+    appState.subjects = [
+      {
+        courseCode: "CIS 2103",
+        courseName: "Object-Oriented Programming",
+        sections: [
+          { group: 1, schedule: "MW 10:00 AM - 11:30 AM", enrolled: "15/30", status: "OK" },
+          { group: 2, schedule: "TTh 01:00 PM - 02:30 PM", enrolled: "20/25", status: "OK" }
+        ]
+      }
+    ];
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);
@@ -538,5 +624,3 @@ window.parseSchedule = parseSchedule;
 window.hasTimeConflict = hasTimeConflict;
 window.isViableSection = (s,c) => isViableSection(s, c || appState.constraints);
 window.generateValidSchedules = generateValidSchedules;
-
-
