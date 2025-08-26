@@ -941,7 +941,7 @@ document.addEventListener('DOMContentLoaded', init);
 // Expose critical functions to window for quick testing
 window.parseSchedule = parseSchedule;
 window.hasTimeConflict = hasTimeConflict;
-window.isViableSection = (s,c) => isViableSection(s, c || appState.constraints);
+window.isViableSection = isViableSection; // no wrapper
 window.generateValidSchedules = generateValidSchedules;
 
 
