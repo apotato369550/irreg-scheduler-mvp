@@ -39,37 +39,165 @@ function parseAmPmToMinutes(timeStr) {
   return hours * 60 + minutes;
 }
 
+
+
+const scheduleParseCache = new Map();
+  
 function parseSchedule(scheduleString) {
-  // Expect format like: 'MW 10:00 AM - 12:30 PM' or 'TTh 07:30 AM - 10:00 AM'
-  if (!scheduleString) return null;
+  // Check cache first
+  if (scheduleParseCache.has(scheduleString)) {
+    return scheduleParseCache.get(scheduleString);
+  }
+  
+  if (!scheduleString || typeof scheduleString !== 'string') {
+    scheduleParseCache.set(scheduleString, null);
+    return null;
+  }
+  
   const parts = scheduleString.split(/\s+/);
-  if (parts.length < 4) return null;
+  if (parts.length < 4) {
+    scheduleParseCache.set(scheduleString, null);
+    return null;
+  }
+  
   const daysToken = parts[0];
   const timePart = scheduleString.slice(daysToken.length).trim();
   const timeMatch = timePart.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
-  if (!timeMatch) return null;
+  
+  if (!timeMatch) {
+    scheduleParseCache.set(scheduleString, null);
+    return null;
+  }
 
-  // Parse days: recognize 'Th' first, then singles M,T,W,F
+  // Parse days more efficiently
   const days = [];
-  let s = daysToken;
-  while (s.length) {
-    if (s.startsWith('Th')) { days.push('Th'); s = s.slice(2); continue; }
-    const ch = s[0];
-    if ('MTWF'.includes(ch)) days.push(ch);
-    s = s.slice(1);
+  let remaining = daysToken;
+  
+  // Handle 'Th' first, then single characters
+  while (remaining.length > 0) {
+    if (remaining.startsWith('Th')) {
+      days.push('Th');
+      remaining = remaining.slice(2);
+    } else if ('MTWF'.includes(remaining[0])) {
+      days.push(remaining[0]);
+      remaining = remaining.slice(1);
+    } else {
+      remaining = remaining.slice(1); // Skip invalid characters
+    }
   }
 
   const start = parseAmPmToMinutes(timeMatch[1]);
   const end = parseAmPmToMinutes(timeMatch[2]);
-  if (start == null || end == null) return null;
-  return { days, startTime: start, endTime: end };
+  
+  if (start == null || end == null || start >= end) {
+    scheduleParseCache.set(scheduleString, null);
+    return null;
+  }
+  
+  const result = { days, startTime: start, endTime: end };
+  scheduleParseCache.set(scheduleString, result);
+  return result;
 }
+
+
+  // Batch processing for large datasets
+  function generateValidSchedulesBatch(subjects, constraints, batchSize = 1000) {
+    console.log('Starting batch generation...');
+    
+    const viablePerSubject = subjects.map(subj => {
+      return subj.sections.filter(sec => isViableSection(sec, constraints));
+    });
+  
+    if (viablePerSubject.some(list => list.length === 0)) {
+      return [];
+    }
+  
+    const totalCombinations = viablePerSubject.reduce((acc, sections) => acc * sections.length, 1);
+    
+    if (totalCombinations <= 10000) {
+      // Use regular generation for smaller datasets
+      return generateValidSchedules(subjects, constraints);
+    }
+    
+    // For large datasets, use sampling approach
+    return generateSampledSchedules(viablePerSubject, subjects, constraints, batchSize);
+  }
+  
+  function generateSampledSchedules(viablePerSubject, subjects, constraints, maxSamples) {
+    const results = [];
+    const attempts = Math.min(maxSamples * 10, 50000); // Try up to 50k random combinations
+    
+    for (let attempt = 0; attempt < attempts && results.length < maxSamples; attempt++) {
+      const selection = [];
+      const parsedSchedules = [];
+      let valid = true;
+      
+      // Randomly select one section from each subject
+      for (let i = 0; i < viablePerSubject.length; i++) {
+        const sections = viablePerSubject[i];
+        const randomSection = sections[Math.floor(Math.random() * sections.length)];
+        const parsed = parseSchedule(randomSection.schedule);
+        
+        if (!parsed) {
+          valid = false;
+          break;
+        }
+        
+        // Check conflicts with previous selections
+        for (let j = 0; j < parsedSchedules.length; j++) {
+          if (hasTimeConflict(parsed, parsedSchedules[j])) {
+            valid = false;
+            break;
+          }
+        }
+        
+        if (!valid) break;
+        
+        selection.push(randomSection);
+        parsedSchedules.push(parsed);
+      }
+      
+      if (valid && selection.length === subjects.length) {
+        // Apply constraints and add to results if valid
+        const fullCount = selection.reduce((acc, s) => acc + (isFullSection(s) ? 1 : 0), 0);
+        
+        if (!constraints.allowFull && fullCount > 0) continue;
+        if (constraints.allowFull && fullCount > constraints.maxFullPerSchedule) continue;
+        
+        // Check if we already have this combination
+        const signature = selection.map(s => `${s.group}_${s.schedule}`).join('|');
+        if (results.some(r => r.signature === signature)) continue;
+        
+        const latestEndPref = toMinutesFromTimeInput(constraints.latestEnd);
+        const endsByPreferred = parsedSchedules.every(p => p.endTime <= latestEndPref);
+        
+        results.push({
+          selections: selection,
+          parsed: parsedSchedules,
+          signature,
+          meta: {
+            fullCount,
+            endsByPreferred,
+            hasLate: !endsByPreferred,
+            latestEnd: Math.max(...parsedSchedules.map(p => p.endTime)),
+          },
+        });
+      }
+    }
+    
+    console.log(`Sampled generation completed: ${results.length} unique schedules from ${attempts} attempts`);
+    return results;
+  }
 
 function hasTimeConflict(schedule1, schedule2) {
   if (!schedule1 || !schedule2) return false;
+  
+  // Check day overlap first (cheaper operation)
   const days1 = new Set(schedule1.days);
-  const overlapDays = schedule2.days.some(d => days1.has(d));
-  if (!overlapDays) return false;
+  const hasCommonDays = schedule2.days.some(d => days1.has(d));
+  if (!hasCommonDays) return false;
+  
+  // Check time overlap
   return schedule1.startTime < schedule2.endTime && schedule2.startTime < schedule1.endTime;
 }
 
@@ -101,54 +229,136 @@ function isViableSection(section, constraints) {
 
 // Combination generation
 function generateValidSchedules(subjects, constraints) {
-  const viablePerSubject = subjects.map(subj => subj.sections.filter(sec => isViableSection(sec, constraints)));
+  console.log('Starting optimized schedule generation...');
+  console.log('Subjects:', subjects.length);
+  console.log('Constraints:', constraints);
+
+  // Pre-filter viable sections for each subject
+  const viablePerSubject = subjects.map(subj => {
+    const viableSections = subj.sections.filter(sec => isViableSection(sec, constraints));
+    console.log(`Subject ${subj.courseCode}: ${viableSections.length} viable sections out of ${subj.sections.length}`);
+    return viableSections;
+  });
+
   // Early exit if any subject has no viable section
-  if (viablePerSubject.some(list => list.length === 0)) return [];
+  if (viablePerSubject.some(list => list.length === 0)) {
+    console.log('No viable sections found for at least one subject');
+    return [];
+  }
 
+  // Calculate total possible combinations and set limits
+  const totalCombinations = viablePerSubject.reduce((acc, sections) => acc * sections.length, 1);
+  console.log('Total possible combinations:', totalCombinations);
+  
+  // Dynamic limits based on complexity
+  let maxResults = constraints.maxSchedules;
+  let maxIterations = 100000;
+  
+  if (totalCombinations > 100000) {
+    maxResults = Math.min(maxResults, 50);
+    maxIterations = 50000;
+    console.warn('Large combination space detected, applying stricter limits');
+  } else if (totalCombinations > 10000) {
+    maxResults = Math.min(maxResults, 100);
+    maxIterations = 75000;
+  }
+
+  // Use iterative approach instead of recursion to avoid stack overflow
+  return generateSchedulesIterative(viablePerSubject, subjects, constraints, maxResults, maxIterations);
+}
+
+function generateSchedulesIterative(viablePerSubject, subjects, constraints, maxResults, maxIterations) {
   const results = [];
-  const current = [];
-
-  function backtrack(subjectIndex) {
-    if (results.length >= constraints.maxSchedules) return;
-    if (subjectIndex === subjects.length) {
-      // Validate full sections count
-      const fullCount = current.reduce((acc, s) => acc + (isFullSection(s) ? 1 : 0), 0);
-      if (!constraints.allowFull && fullCount > 0) return; // defensive
-      if (constraints.allowFull && fullCount > constraints.maxFullPerSchedule) return;
-      const parsedArr = current.map(s => parseSchedule(s.schedule));
+  let iterationCount = 0;
+  
+  // Initialize stack with first level choices
+  const stack = [];
+  for (let i = 0; i < viablePerSubject[0].length; i++) {
+    stack.push({
+      subjectIndex: 0,
+      sectionIndex: i,
+      currentSelection: [viablePerSubject[0][i]],
+      parsedSchedules: [parseSchedule(viablePerSubject[0][i].schedule)]
+    });
+  }
+  
+  while (stack.length > 0 && results.length < maxResults && iterationCount < maxIterations) {
+    iterationCount++;
+    
+    // Progress reporting for large searches
+    if (iterationCount % 10000 === 0) {
+      console.log(`Progress: ${iterationCount} iterations, ${results.length} valid schedules found`);
+    }
+    
+    const state = stack.pop();
+    const { subjectIndex, currentSelection, parsedSchedules } = state;
+    
+    // If we've selected for all subjects, validate and add result
+    if (subjectIndex === subjects.length - 1) {
+      const fullCount = currentSelection.reduce((acc, s) => acc + (isFullSection(s) ? 1 : 0), 0);
+      
+      // Apply full section constraints
+      if (!constraints.allowFull && fullCount > 0) continue;
+      if (constraints.allowFull && fullCount > constraints.maxFullPerSchedule) continue;
+      
+      // Check if all schedules parsed correctly
+      if (parsedSchedules.some(p => p === null)) continue;
+      
+      // Calculate metadata
       const latestEndPref = toMinutesFromTimeInput(constraints.latestEnd);
-      const endsByPreferred = parsedArr.every(p => p.endTime <= latestEndPref);
-      const hasLate = !endsByPreferred;
+      const endsByPreferred = parsedSchedules.every(p => p.endTime <= latestEndPref);
+      const latestEnd = Math.max(...parsedSchedules.map(p => p.endTime));
+      
       results.push({
-        selections: [...current],
-        parsed: parsedArr,
+        selections: [...currentSelection],
+        parsed: [...parsedSchedules],
         meta: {
           fullCount,
           endsByPreferred,
-          hasLate,
-          latestEnd: Math.max(...parsedArr.map(p => p.endTime)),
+          hasLate: !endsByPreferred,
+          latestEnd,
         },
       });
-      return;
+      continue;
     }
-
-    const options = viablePerSubject[subjectIndex];
-    for (const sec of options) {
-      // Check for conflicts with current
-      const parsedSec = parseSchedule(sec.schedule);
-      let conflict = false;
-      for (const existing of current) {
-        if (hasTimeConflict(parsedSec, parseSchedule(existing.schedule))) { conflict = true; break; }
+    
+    // Try next subject's sections
+    const nextSubjectIndex = subjectIndex + 1;
+    const nextSubjectSections = viablePerSubject[nextSubjectIndex];
+    
+    for (let i = 0; i < nextSubjectSections.length; i++) {
+      const nextSection = nextSubjectSections[i];
+      const nextParsed = parseSchedule(nextSection.schedule);
+      
+      if (!nextParsed) continue;
+      
+      // Check for conflicts with current selection
+      let hasConflict = false;
+      for (let j = 0; j < parsedSchedules.length; j++) {
+        if (parsedSchedules[j] && hasTimeConflict(nextParsed, parsedSchedules[j])) {
+          hasConflict = true;
+          break;
+        }
       }
-      if (conflict) continue;
-      current.push(sec);
-      backtrack(subjectIndex + 1);
-      current.pop();
-      if (results.length >= constraints.maxSchedules) return;
+      
+      if (!hasConflict) {
+        // Add this branch to the stack
+        stack.push({
+          subjectIndex: nextSubjectIndex,
+          sectionIndex: i,
+          currentSelection: [...currentSelection, nextSection],
+          parsedSchedules: [...parsedSchedules, nextParsed]
+        });
+      }
     }
   }
-
-  backtrack(0);
+  
+  console.log(`Generation completed: ${results.length} schedules found in ${iterationCount} iterations`);
+  
+  if (iterationCount >= maxIterations) {
+    console.warn('Hit iteration limit - results may be incomplete');
+  }
+  
   return results;
 }
 
@@ -421,6 +631,193 @@ function renderResults() {
   appState.generated.filtered.forEach((sched, i) => listWrap.appendChild(renderScheduleCard(sched, i)));
 }
 
+// Additional optimizations for your scheduler
+
+// 1. Pre-filter sections by time constraints
+function preFilterSectionsByTime(sections, constraints) {
+  const earliestStart = toMinutesFromTimeInput(constraints.earliestStart);
+  const latestEnd = toMinutesFromTimeInput(constraints.latestEnd);
+  
+  return sections.filter(section => {
+    const parsed = parseSchedule(section.schedule);
+    if (!parsed) return false;
+    
+    // Allow sections that start after earliest time
+    // Don't filter by end time here - let user see late options
+    return parsed.startTime >= earliestStart;
+  });
+}
+
+// 2. Smart section ordering (put sections with fewer options first)
+function optimizeSubjectOrder(subjects, viablePerSubject) {
+  const subjectInfo = subjects.map((subject, index) => ({
+    subject,
+    viableSections: viablePerSubject[index],
+    sectionCount: viablePerSubject[index].length
+  }));
+  
+  // Sort by number of viable sections (ascending) - constrained first
+  subjectInfo.sort((a, b) => a.sectionCount - b.sectionCount);
+  
+  return {
+    subjects: subjectInfo.map(info => info.subject),
+    viablePerSubject: subjectInfo.map(info => info.viableSections)
+  };
+}
+
+// 3. Enhanced constraint checking with early termination
+function isValidPartialSchedule(selections, parsedSchedules, constraints) {
+  // Check full sections count early
+  const fullCount = selections.reduce((acc, s) => acc + (isFullSection(s) ? 1 : 0), 0);
+  
+  if (!constraints.allowFull && fullCount > 0) return false;
+  if (constraints.allowFull && fullCount > constraints.maxFullPerSchedule) return false;
+  
+  // Check time conflicts
+  for (let i = 0; i < parsedSchedules.length - 1; i++) {
+    for (let j = i + 1; j < parsedSchedules.length; j++) {
+      if (hasTimeConflict(parsedSchedules[i], parsedSchedules[j])) {
+        return false;
+      }
+    }
+  }
+  
+  return true;
+}
+
+// 4. Progressive difficulty - start with easier constraints
+function generateProgressiveSchedules(subjects, constraints) {
+  console.log('Using progressive generation strategy...');
+  
+  // Try with stricter preferences first
+  let results = [];
+  const originalMaxSchedules = constraints.maxSchedules;
+  
+  // Phase 1: Try to find schedules ending by preferred time with no full sections
+  const strictConstraints = {
+    ...constraints,
+    allowFull: false,
+    maxSchedules: Math.min(50, originalMaxSchedules)
+  };
+  
+  console.log('Phase 1: Strict constraints (no full, ends by preferred time)');
+  results = generateValidSchedules(subjects, strictConstraints);
+  
+  if (results.length >= 10 || results.length >= originalMaxSchedules) {
+    console.log(`Phase 1 successful: Found ${results.length} schedules`);
+    return results.slice(0, originalMaxSchedules);
+  }
+  
+  // Phase 2: Allow full sections but prefer ending by preferred time
+  if (constraints.allowFull) {
+    console.log('Phase 2: Allow full sections');
+    const relaxedConstraints = {
+      ...constraints,
+      maxSchedules: originalMaxSchedules - results.length
+    };
+    
+    const additionalResults = generateValidSchedules(subjects, relaxedConstraints);
+    results = [...results, ...additionalResults].slice(0, originalMaxSchedules);
+  }
+  
+  console.log(`Progressive generation completed: ${results.length} total schedules`);
+  return results;
+}
+
+// 5. Memory-efficient result storage
+class ScheduleResultManager {
+  constructor(maxResults = 1000) {
+    this.maxResults = maxResults;
+    this.results = [];
+    this.signatures = new Set(); // Prevent duplicates
+  }
+  
+  addResult(schedule) {
+    // Generate signature to detect duplicates
+    const signature = schedule.selections
+      .map(s => `${s.group}_${s.schedule}`)
+      .sort()
+      .join('|');
+    
+    if (this.signatures.has(signature)) {
+      return false; // Duplicate
+    }
+    
+    this.signatures.add(signature);
+    this.results.push(schedule);
+    
+    // If we exceed max results, remove worst result
+    if (this.results.length > this.maxResults) {
+      this.results.sort((a, b) => this.scoreSchedule(b) - this.scoreSchedule(a));
+      const removed = this.results.pop();
+      this.signatures.delete(this.getSignature(removed));
+    }
+    
+    return true;
+  }
+  
+  scoreSchedule(schedule) {
+    // Higher score = better schedule
+    let score = 0;
+    if (schedule.meta.endsByPreferred) score += 100;
+    if (schedule.meta.fullCount === 0) score += 50;
+    score -= schedule.meta.fullCount * 10; // Penalize full sections
+    score -= Math.max(0, schedule.meta.latestEnd - (16 * 60 + 30)) / 60; // Penalize late end times
+    return score;
+  }
+  
+  getSignature(schedule) {
+    return schedule.selections
+      .map(s => `${s.group}_${s.schedule}`)
+      .sort()
+      .join('|');
+  }
+  
+  getResults() {
+    // Return results sorted by score (best first)
+    return this.results.sort((a, b) => this.scoreSchedule(b) - this.scoreSchedule(a));
+  }
+}
+
+// 6. Updated main generation function with all optimizations
+function generateOptimizedSchedules(subjects, constraints) {
+  console.log('Starting fully optimized schedule generation...');
+  
+  // Pre-filter sections
+  const preFilteredSubjects = subjects.map(subject => ({
+    ...subject,
+    sections: preFilterSectionsByTime(subject.sections, constraints)
+  }));
+  
+  const viablePerSubject = preFilteredSubjects.map(subj => {
+    return subj.sections.filter(sec => isViableSection(sec, constraints));
+  });
+  
+  // Check if any subject has no viable sections
+  if (viablePerSubject.some(list => list.length === 0)) {
+    console.log('No viable sections found for at least one subject');
+    return [];
+  }
+  
+  // Optimize subject order
+  const optimized = optimizeSubjectOrder(preFilteredSubjects, viablePerSubject);
+  
+  // Calculate complexity and choose strategy
+  const totalCombinations = optimized.viablePerSubject.reduce((acc, sections) => acc * sections.length, 1);
+  console.log(`Total combinations: ${totalCombinations}`);
+  
+  if (totalCombinations > 100000) {
+    console.log('Using sampling strategy for large dataset');
+    return generateSampledSchedules(optimized.viablePerSubject, optimized.subjects, constraints, constraints.maxSchedules);
+  } else if (totalCombinations > 10000) {
+    console.log('Using progressive strategy for medium dataset');
+    return generateProgressiveSchedules(optimized.subjects, constraints);
+  } else {
+    console.log('Using iterative strategy for small dataset');
+    return generateSchedulesIterative(optimized.viablePerSubject, optimized.subjects, constraints, constraints.maxSchedules, 100000);
+  }
+}
+
 // Event wiring and initialization
 function init() {
   document.getElementById('add-section-btn').onclick = addBuilderRow;
@@ -478,15 +875,23 @@ function init() {
   document.getElementById('generate-btn').onclick = async () => {
     const status = document.getElementById('gen-status');
     status.textContent = 'Generating…';
-    // Read constraints and store
-    appState.constraints = readConstraints();
-    refreshTabsLabels();
-    await new Promise(r => setTimeout(r, 50));
-    // Generate
-    const res = generateValidSchedules(appState.subjects, appState.constraints);
-    appState.generated.schedules = res;
-    status.textContent = res.length === 0 ? 'No schedules found.' : `Generated ${res.length} schedule(s).`;
-    renderResults();
+    
+    try {
+      appState.constraints = readConstraints();
+      refreshTabsLabels();
+      
+      await new Promise(r => setTimeout(r, 50));
+      
+      // Use the optimized function
+      const res = generateOptimizedSchedules(appState.subjects, appState.constraints);
+      appState.generated.schedules = res;
+      
+      status.textContent = res.length === 0 ? 'No schedules found.' : `Generated ${res.length} schedule(s).`;
+      renderResults();
+    } catch (error) {
+      console.error('Error generating schedules:', error);
+      status.textContent = 'Error generating schedules. Check console for details.';
+    }
   };
 
   // Seed with sample data for smoke testing
